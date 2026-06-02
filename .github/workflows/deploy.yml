@@ -1,0 +1,97 @@
+name: Deploy POS Application
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: test123
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5432:5432
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Setup PHP
+      uses: shivammathur/setup-php@v2
+      with:
+        php-version: '8.2'
+        extensions: pdo_pgsql
+    
+    - name: Install Dependencies
+      run: |
+        cd backend
+        composer install --no-interaction
+    
+    - name: Run Backend Tests
+      run: |
+        cd backend
+        php artisan migrate --env=testing
+        php artisan test
+    
+    - name: Setup Node
+      uses: actions/setup-node@v3
+      with:
+        node-version: '18'
+    
+    - name: Install Frontend Dependencies
+      run: |
+        cd frontend
+        npm ci
+    
+    - name: Build Frontend
+      run: |
+        cd frontend
+        npm run build
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+    
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Deploy to Production
+      env:
+        DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+        DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+      run: |
+        echo "$DEPLOY_KEY" > deploy_key
+        chmod 600 deploy_key
+        rsync -avz -e "ssh -i deploy_key -o StrictHostKeyChecking=no" \
+          --exclude 'node_modules' \
+          --exclude 'vendor' \
+          --exclude '.env' \
+          --exclude '.git' \
+          ./ $DEPLOY_USER@$DEPLOY_HOST:/var/www/pos-app/
+        
+        ssh -i deploy_key -o StrictHostKeyChecking=no $DEPLOY_USER@$DEPLOY_HOST << 'EOF'
+          cd /var/www/pos-app/backend
+          php artisan migrate --force
+          php artisan config:cache
+          php artisan route:cache
+          php artisan view:cache
+          
+          cd /var/www/pos-app/frontend
+          npm install
+          npm run build
+          
+          sudo systemctl restart nginx
+          sudo systemctl restart php8.2-fpm
+        EOF

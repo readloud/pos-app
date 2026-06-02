@@ -1,0 +1,37 @@
+<?php
+
+use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\API\AuthController;
+use App\Http\Controllers\API\ProductController;
+use App\Http\Controllers\API\CartController;
+use App\Http\Controllers\API\SaleController;
+
+// Public routes
+Route::post("/login", [AuthController::class, "login"]);
+
+// Protected routes
+Route::middleware(["auth:sanctum"])->group(function () {
+    // Auth
+    Route::post("/logout", [AuthController::class, "logout"]);
+    Route::get("/user", [AuthController::class, "user"]);
+    Route::get("/me", [AuthController::class, "me"]);
+
+    // Products
+    Route::get("/products", [ProductController::class, "index"]);
+    Route::get("/products/search", [ProductController::class, "search"]);
+    Route::get("/products/barcode/{barcode}", [ProductController::class, "getByBarcode"]);
+    Route::get("/products/{id}", [ProductController::class, "show"]);
+
+    // Cart
+    Route::get("/cart", [CartController::class, "index"]);
+    Route::post("/cart/items", [CartController::class, "addItem"]);
+    Route::put("/cart/items/{itemId}", [CartController::class, "updateItem"]);
+    Route::delete("/cart/items/{itemId}", [CartController::class, "removeItem"]);
+    Route::delete("/cart", [CartController::class, "clear"]);
+
+    // Sales
+    Route::get("/sales", [SaleController::class, "index"]);
+    Route::get("/sales/{id}", [SaleController::class, "show"]);
+    Route::get("/sales/{id}/invoice", [SaleController::class, "invoice"]);
+    Route::post("/sales", [SaleController::class, "store"]);
+});
